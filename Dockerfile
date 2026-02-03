@@ -1,5 +1,8 @@
-# Use the official ruby image as the base image
-FROM ruby:4
+ARG BASE_IMAGE=ruby:latest
+FROM ${BASE_IMAGE}
+
+# Ensure we are root for installations
+USER root
 
 # Define build-time arguments with defaults
 ARG USER_ID=1000
@@ -11,6 +14,7 @@ RUN apt-get update && apt-get install -y \
     neovim \
     git \
     curl \
+    build-essential \
     && rm -rf /var/lib/apt/lists/*
 
 # Create a group and user matching the host IDs

@@ -3,9 +3,10 @@ services:
     build:
       context: .
       args:
+        BASE_IMAGE: ${BASE_IMAGE}
         USER_ID: ${USER_ID}
         GROUP_ID: ${GROUP_ID}
-    image: dev-env-container
+    image: ${IMAGE_NAME}
     container_name: ${CONTAINER_NAME} 
     init: true
     volumes:

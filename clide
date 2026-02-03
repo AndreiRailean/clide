@@ -1,10 +1,35 @@
 #!/bin/bash
-IMAGE_NAME="dev-env-container"
+
+IMAGE_PREFIX="clide"
+
 # Get the absolute path of the directory where this script lives
-IDE_DIR="$(cd "$(dirname "${BASH_SOURCE}")" && pwd)"
+PDE_DIR="$(cd "$(dirname "${BASH_SOURCE}")" && pwd)"
 TARGET_DIR="$(pwd)"
 export APP_SOURCE="$(cd "$TARGET_DIR" && pwd)"
-echo $APP_SOURCE
+
+BASE_IMAGE_FILE="$APP_SOURCE/.base-image"
+
+if [ -f "$BASE_IMAGE_FILE" ]; then
+    export BASE_IMAGE=$(cat "$BASE_IMAGE_FILE" | xargs)
+else
+    # Auto-detection fallback
+    if [ -f "$APP_SOURCE/Gemfile" ]; then
+        DETECTED="ruby:latest"
+    elif [ -f "$APP_SOURCE/package.json" ]; then
+        DETECTED="node:20"
+    elif [ -f "$APP_SOURCE/requirements.txt" ]; then
+        DETECTED="python:3.11"
+    else
+        DETECTED="ruby:latest"
+    fi
+    
+    echo "--- No .base-image found. Auto-detected $DETECTED ---"
+    echo "$DETECTED" > "$BASE_IMAGE_FILE"
+    export BASE_IMAGE="$DETECTED"
+fi
+
+# Create a tag friendly version (e.g., ruby-latest)
+export BASE_IMAGE_TAG=$(echo "$BASE_IMAGE" | tr ':' '-')
 
 # Generate a unique ID based on the path (e.g., "my-ruby-app-8a2f")
 # This prevents different projects from clobbering each other
@@ -14,6 +39,7 @@ else
 	PROJ_HASH=$(echo "$APP_SOURCE" | md5sum | cut -c 1-4)
 fi
 PROJ_NAME=$(basename "$APP_SOURCE" | tr '[:upper:]' '[:lower:]' | tr -cd '[:alnum:]')
+export IMAGE_NAME="$IMAGE_PREFIX-$BASE_IMAGE_TAG"
 export CONTAINER_NAME="$IMAGE_NAME-$PROJ_NAME-$PROJ_HASH"
 
 # Export IDs for Docker Compose
@@ -24,7 +50,7 @@ export GROUP_ID=$(id -g)
 clide_stop() {
 	if [ "$1" == "-a" ]; then
 		echo "--- Stopping ALL clide containers ---"
-		docker ps --filter "name=$IMAGE_NAME-" -aq | xargs -r docker stop
+		docker ps --filter "name=$IMAGE_PREFIX-" -aq | xargs -r docker stop
 	elif [ "$(docker ps -q -f name=$CONTAINER_NAME)" ]; then
 		echo "--- Stopping $PROJ_NAME ---"
 		docker stop "$CONTAINER_NAME"
@@ -40,11 +66,10 @@ clide_clean() {
 }
 
 clide_start() {
-	echo "Starting Clide IDE"
+	echo "Starting Clide PDE"
 	# 1. CHECK FOR UPDATES
 	# Get the creation timestamp of the local image (if it exists)
 	IMAGE_TIME=$(docker image inspect -f '{{.Created}}' "$IMAGE_NAME" 2>/dev/null)
-	echo "$IMAGE_TIME $TARGET_DIR $IDE_DIR $CONTAINER_NAME"
 
 	if [ -n "$IMAGE_TIME" ]; then
 		# Convert ISO 8601 timestamp to Unix epoch
@@ -52,33 +77,33 @@ clide_start() {
 
 		# Check if Dockerfile or any file in configs/ is newer than the image
 		# We use 'find' to get the max mtime of the build context
-		LATEST_MOD=$(find "$IDE_DIR/Dockerfile" "$IDE_DIR/configs" -type f -exec stat -f "%m" {} + 2>/dev/null | sort -nr | head -n1)
+		LATEST_MOD=$(find "$PDE_DIR/Dockerfile" "$PDE_DIR/configs" -type f -exec stat -f "%m" {} + 2>/dev/null | sort -nr | head -n1)
 
 		# Check for md5 (macOS) or md5sum (Linux)
 		if command -v md5 >/dev/null 2>&1; then
-			FILES_HASH=$(find "$IDE_DIR/Dockerfile" "$IDE_DIR/configs" -type f -exec md5 -q {} + | md5 -q)
+			FILES_HASH=$(find "$PDE_DIR/Dockerfile" "$PDE_DIR/configs" -type f -exec md5 -q {} + | md5 -q)
 		else
-			FILES_HASH=$(find "$IDE_DIR/Dockerfile" "$IDE_DIR/configs" -type f -exec md5sum {} + | md5sum | cut -d' ' -f1)
+			FILES_HASH=$(find "$PDE_DIR/Dockerfile" "$PDE_DIR/configs" -type f -exec md5sum {} + | md5sum | cut -d' ' -f1)
 		fi
 
-		OLD_HASH=$(cat "$IDE_DIR/.build_hash" 2>/dev/null)
+		OLD_HASH=$(cat "$PDE_DIR/.build_hash" 2>/dev/null)
 
 		if [ "$FILES_HASH" != "$OLD_HASH" ]; then
-			echo "--- Changes detected. Rebuilding IDE image... ---"
-			docker compose -f "$IDE_DIR/docker-compose.yml" build && echo "$FILES_HASH" > "$IDE_DIR/.build_hash"
+			echo "--- Changes detected. Rebuilding PDE image... ---"
+			docker compose -f "$PDE_DIR/docker-compose.yml" build && echo "$FILES_HASH" > "$PDE_DIR/.build_hash"
 		fi
 
 	else
 		echo "--- Image not found. Initial build... ---"
-		docker compose -f "$IDE_DIR/docker-compose.yml" build
+		docker compose -f "$PDE_DIR/docker-compose.yml" build
 	fi
 
 	# 2. Ensure the container is running in the background
 	if [ ! "$(docker ps -q -f name=$CONTAINER_NAME)" ]; then
-		echo "--- Launching IDE for $PROJ_NAME ---"
+		echo "--- Launching PDE for $PROJ_NAME ---"
 		# -d runs it in the background
 		COMPOSE_PROJECT_NAME="$CONTAINER_NAME" \
-			docker compose -f "$IDE_DIR/docker-compose.yml" up -d --remove-orphans
+			docker compose -f "$PDE_DIR/docker-compose.yml" up -d --remove-orphans
 	fi
 
 	# 3. Always use 'exec' to enter the environment

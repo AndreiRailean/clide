@@ -1,4 +1,4 @@
-local project_state = "/app/.dev-env-container-state"
+local project_state = "/app/.clide-state"
 
 if vim.fn.isdirectory(project_state) == 0 then
 	vim.fn.mkdir(project_state, "p")
