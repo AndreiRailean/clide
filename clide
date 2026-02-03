@@ -73,6 +73,18 @@ clide_stop() {
 		docker ps --filter "name=$IMAGE_PREFIX-" -aq | xargs -r docker stop
 	fi
 
+	# Scenario 2: Stop by specific name
+	if [[ -n "$1" ]]; then
+		if [[ "$1" == $IMAGE_PREFIX-* ]]; then
+			echo "--- Stopping specific container: $1 ---"
+			docker stop "$1"
+		else
+			echo "❌ Error: Invalid container name. Use 'clide list' to find the name."
+		fi
+		return 0
+	fi
+
+
 	# Check if we are actually in a project for a local stop
 	if [ -z "$PROJECT_ROOT" ]; then
 		echo "❌ Error: Not inside a CLIDE project."
@@ -200,6 +212,12 @@ clide_usage(){
 	clide_version
 }
 
+clide_list(){
+	echo "--- Active CLIDE Environments ---"
+	# Format: Container Name | Base Image | Status
+	docker ps --filter "name=$IMAGE_PREFIX-" --format "table {{.Names}}\t{{.Image}}\t{{.Status}}"
+}
+
 # --- DISPATCHER ---
 case "$1" in
 	init)		clide_init ;;
@@ -207,6 +225,7 @@ case "$1" in
 	stop)   	clide_stop "$2" ;;
 	clean)  	clide_clean ;;
 	check)		clide_check ;;
+	list)		clide_list ;;
 	version) 	clide_version ;;
 	*)      	clide_usage ; exit 1 ;;
 esac
