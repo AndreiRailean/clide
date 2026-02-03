@@ -13,19 +13,19 @@
 - Docker Desktop or Docker Engine with the Compose plugin.
 - A terminal with bash or zsh.
 
-##🚀 Installation
-1. *Clone the repository:*
+## 🚀 Installation
+1. **Clone the repository:**
 ```bash
 git clone git@github.com:AndreiRailean/clide.git ~/.clide
 ```
 
-2. *Add to your PATH:*
+2. **Add to your PATH:**
 Add the following to your ~/.zshrc or ~/.bashrc:
 ```bash
 export PATH="$PATH:$HOME/.clide"
 ```
 
-3. *Reload your shell:*
+3. **Reload your shell:**
 ```bash
 source ~/.zshrc
 ```
@@ -91,5 +91,5 @@ Note: It is recommended to add `.clide-state/` and `.base-image` to your global 
 Contributions are welcome! Please feel free to submit a Pull Request.
 
 ---
-*Built with ❤️ for developers who love their dotfiles but hate environment drift.*
+**Built with ❤️ for developers who love their dotfiles but hate environment drift.**
 ---
