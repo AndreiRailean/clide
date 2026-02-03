@@ -5,14 +5,13 @@ services:
       args:
         USER_ID: ${USER_ID}
         GROUP_ID: ${GROUP_ID}
-    image: ruby-dev-env
-    container_name: ruby-dev-container
+    image: dev-env-container
+    container_name: ${CONTAINER_NAME} 
     init: true
     volumes:
       # Use an absolute path if this compose file is in a fixed location, 
       # or '.' if it stays in the project root.
-      - ./src:/app
-      - ./container-state/.local:/home/devuser/.local
+      - ${APP_SOURCE}:/app
     stdin_open: true
     tty: true
     deploy:

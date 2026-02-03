@@ -1,0 +1,95 @@
+#!/bin/bash
+IMAGE_NAME="dev-env-container"
+# Get the absolute path of the directory where this script lives
+IDE_DIR="$(cd "$(dirname "${BASH_SOURCE}")" && pwd)"
+TARGET_DIR="$(pwd)"
+export APP_SOURCE="$(cd "$TARGET_DIR" && pwd)"
+echo $APP_SOURCE
+
+# Generate a unique ID based on the path (e.g., "my-ruby-app-8a2f")
+# This prevents different projects from clobbering each other
+if command -v md5 >/dev/null 2>&1; then
+	PROJ_HASH=$(echo "$APP_SOURCE" | md5 | cut -c 1-4)
+else
+	PROJ_HASH=$(echo "$APP_SOURCE" | md5sum | cut -c 1-4)
+fi
+PROJ_NAME=$(basename "$APP_SOURCE" | tr '[:upper:]' '[:lower:]' | tr -cd '[:alnum:]')
+export CONTAINER_NAME="$IMAGE_NAME-$PROJ_NAME-$PROJ_HASH"
+
+# Export IDs for Docker Compose
+export USER_ID=$(id -u)
+export GROUP_ID=$(id -g)
+
+# --- COMMANDS ---
+clide_stop() {
+	if [ "$1" == "-a" ]; then
+		echo "--- Stopping ALL clide containers ---"
+		docker ps --filter "name=$IMAGE_NAME-" -aq | xargs -r docker stop
+	elif [ "$(docker ps -q -f name=$CONTAINER_NAME)" ]; then
+		echo "--- Stopping $PROJ_NAME ---"
+		docker stop "$CONTAINER_NAME"
+	else
+		echo "--- No active container for this directory ---"
+	fi
+}
+
+clide_clean() {
+	echo "--- Pruning Docker networks & orphaned volumes ---"
+	docker network prune -f
+	# Add volume pruning if desired
+}
+
+clide_start() {
+	echo "Starting Clide IDE"
+	# 1. CHECK FOR UPDATES
+	# Get the creation timestamp of the local image (if it exists)
+	IMAGE_TIME=$(docker image inspect -f '{{.Created}}' "$IMAGE_NAME" 2>/dev/null)
+	echo "$IMAGE_TIME $TARGET_DIR $IDE_DIR $CONTAINER_NAME"
+
+	if [ -n "$IMAGE_TIME" ]; then
+		# Convert ISO 8601 timestamp to Unix epoch
+		IMAGE_EPOCH=$(date -j -f "%Y-%m-%dT%H:%M:%S" "${IMAGE_TIME%.*}" "+%s" 2>/dev/null || date -d "$IMAGE_TIME" "+%s")
+
+		# Check if Dockerfile or any file in configs/ is newer than the image
+		# We use 'find' to get the max mtime of the build context
+		LATEST_MOD=$(find "$IDE_DIR/Dockerfile" "$IDE_DIR/configs" -type f -exec stat -f "%m" {} + 2>/dev/null | sort -nr | head -n1)
+
+		# Check for md5 (macOS) or md5sum (Linux)
+		if command -v md5 >/dev/null 2>&1; then
+			FILES_HASH=$(find "$IDE_DIR/Dockerfile" "$IDE_DIR/configs" -type f -exec md5 -q {} + | md5 -q)
+		else
+			FILES_HASH=$(find "$IDE_DIR/Dockerfile" "$IDE_DIR/configs" -type f -exec md5sum {} + | md5sum | cut -d' ' -f1)
+		fi
+
+		OLD_HASH=$(cat "$IDE_DIR/.build_hash" 2>/dev/null)
+
+		if [ "$FILES_HASH" != "$OLD_HASH" ]; then
+			echo "--- Changes detected. Rebuilding IDE image... ---"
+			docker compose -f "$IDE_DIR/docker-compose.yml" build && echo "$FILES_HASH" > "$IDE_DIR/.build_hash"
+		fi
+
+	else
+		echo "--- Image not found. Initial build... ---"
+		docker compose -f "$IDE_DIR/docker-compose.yml" build
+	fi
+
+	# 2. Ensure the container is running in the background
+	if [ ! "$(docker ps -q -f name=$CONTAINER_NAME)" ]; then
+		echo "--- Launching IDE for $PROJ_NAME ---"
+		# -d runs it in the background
+		COMPOSE_PROJECT_NAME="$CONTAINER_NAME" \
+			docker compose -f "$IDE_DIR/docker-compose.yml" up -d --remove-orphans
+	fi
+
+	# 3. Always use 'exec' to enter the environment
+	# This calls your tmux-start.sh which handles create-or-attach
+	docker exec -it $CONTAINER_NAME tmux-start
+}
+
+# --- DISPATCHER ---
+case "$1" in
+	start)  clide_start ;;
+	stop)   clide_stop "$2" ;;
+	clean)  clide_clean ;;
+	*)      echo "Usage: clide {start|stop|clean}"; exit 1 ;;
+esac
