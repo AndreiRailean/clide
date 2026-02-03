@@ -50,6 +50,12 @@ To stop all active CLIDE containers across your system:
 clide stop -a
 ```
 
+### System Health
+Check if your system meets the requirements and see current project context:
+```bash
+clide check
+```
+
 ## ⚙️ Configuration
 
 ### Changing the Language

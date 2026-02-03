@@ -1,4 +1,5 @@
 #!/bin/bash
+CLIDE_VERSION="0.1.0"
 
 IMAGE_PREFIX="clide"
 
@@ -10,22 +11,22 @@ export APP_SOURCE="$(cd "$TARGET_DIR" && pwd)"
 BASE_IMAGE_FILE="$APP_SOURCE/.base-image"
 
 if [ -f "$BASE_IMAGE_FILE" ]; then
-    export BASE_IMAGE=$(cat "$BASE_IMAGE_FILE" | xargs)
+	export BASE_IMAGE=$(cat "$BASE_IMAGE_FILE" | xargs)
 else
-    # Auto-detection fallback
-    if [ -f "$APP_SOURCE/Gemfile" ]; then
-        DETECTED="ruby:latest"
-    elif [ -f "$APP_SOURCE/package.json" ]; then
-        DETECTED="node:20"
-    elif [ -f "$APP_SOURCE/requirements.txt" ]; then
-        DETECTED="python:3.11"
-    else
-        DETECTED="ruby:latest"
-    fi
-    
-    echo "--- No .base-image found. Auto-detected $DETECTED ---"
-    echo "$DETECTED" > "$BASE_IMAGE_FILE"
-    export BASE_IMAGE="$DETECTED"
+	# Auto-detection fallback
+	if [ -f "$APP_SOURCE/Gemfile" ]; then
+		DETECTED="ruby:latest"
+	elif [ -f "$APP_SOURCE/package.json" ]; then
+		DETECTED="node:20"
+	elif [ -f "$APP_SOURCE/requirements.txt" ]; then
+		DETECTED="python:3.11"
+	else
+		DETECTED="ruby:latest"
+	fi
+
+	echo "--- No .base-image found. Auto-detected $DETECTED ---"
+	echo "$DETECTED" > "$BASE_IMAGE_FILE"
+	export BASE_IMAGE="$DETECTED"
 fi
 
 # Create a tag friendly version (e.g., ruby-latest)
@@ -111,10 +112,63 @@ clide_start() {
 	docker exec -it $CONTAINER_NAME tmux-start
 }
 
+clide_version(){
+	echo "CLIDE Version: $CLIDE_VERSION"
+}
+
+clide_check() {
+	echo "--- CLIDE System Check ---"
+	clide_version
+	echo "OS: $(uname -s) ($(uname -m))"
+
+	# Check Docker
+	if command -v docker >/dev/null 2>&1; then
+		echo "Docker: $(docker version --format '{{.Server.Version}}') ✅"
+	else
+		echo "Docker: NOT FOUND ❌"
+	fi
+
+	# Check Docker Compose
+	if docker compose version >/dev/null 2>&1; then
+		echo "Compose: $(docker compose version --short) ✅"
+	else
+		echo "Compose: NOT FOUND ❌ (Ensure Docker Compose V2 is installed)"
+	fi
+
+	# Check Permissions/Environment
+	echo "User ID: $(id -u)"
+	# Cross-platform Group Name lookup
+	if command -v getent >/dev/null 2>&1; then
+	    # Linux way
+	    GROUP_NAME=$(getent group $(id -g) | cut -d: -f1)
+	else
+	    # macOS way
+	    GROUP_NAME=$(id -gn)
+	fi
+
+	echo "Group ID: $(id -g) ($GROUP_NAME)"
+
+	echo ""
+	echo "--- Project Context ---"
+	echo "Current Dir: $APP_SOURCE"
+	if [ -f "$APP_SOURCE/.base-image" ]; then
+		echo ".base-image: $(cat "$APP_SOURCE/.base-image")"
+	else
+		echo ".base-image: NOT FOUND (Will auto-detect on start)"
+	fi
+}
+
+clide_usage(){
+	echo "Usage: clide {start|stop|clean|check|version}"
+	clide_version
+}
+
 # --- DISPATCHER ---
 case "$1" in
-	start)  clide_start ;;
-	stop)   clide_stop "$2" ;;
-	clean)  clide_clean ;;
-	*)      echo "Usage: clide {start|stop|clean}"; exit 1 ;;
+	start)  	clide_start ;;
+	stop)   	clide_stop "$2" ;;
+	clean)  	clide_clean ;;
+	check)		clide_check ;;
+	version) 	clide_version ;;
+	*)      	clide_usage ; exit 1 ;;
 esac
