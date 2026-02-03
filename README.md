@@ -31,6 +31,12 @@ source ~/.zshrc
 ```
 
 ## 📖 Usage
+
+### 🚀 Quick Start
+1. `cd` into your project.
+2. `clide init` (Creates `.base-image`).
+3. `clide start` (Launches environment).
+
 ### Start an Environment
 Navigate to any project folder and run:
 ```bash

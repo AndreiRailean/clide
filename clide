@@ -5,28 +5,30 @@ IMAGE_PREFIX="clide"
 
 # Get the absolute path of the directory where this script lives
 PDE_DIR="$(cd "$(dirname "${BASH_SOURCE}")" && pwd)"
-TARGET_DIR="$(pwd)"
-export APP_SOURCE="$(cd "$TARGET_DIR" && pwd)"
+CURRENT_DIR="$(pwd)"
 
-BASE_IMAGE_FILE="$APP_SOURCE/.base-image"
+# Function to find the project root by looking for .base-image
+find_project_root() {
+	local dir="$1"
+	# Stop if we hit the actual system root or the user's home (to prevent pollution)
+	while [[ "$dir" != "/" && "$dir" != "$HOME" ]]; do
+		if [[ -f "$dir/.base-image" ]]; then
+			echo "$dir"
+			return 0
+		fi
+		dir="$(dirname "$dir")"
+	done
+	return 1
+}
+
+PROJECT_ROOT=$(find_project_root "$CURRENT_DIR")
+
+BASE_IMAGE_FILE="$PROJECT_ROOT/.base-image"
 
 if [ -f "$BASE_IMAGE_FILE" ]; then
 	export BASE_IMAGE=$(cat "$BASE_IMAGE_FILE" | xargs)
 else
-	# Auto-detection fallback
-	if [ -f "$APP_SOURCE/Gemfile" ]; then
-		DETECTED="ruby:latest"
-	elif [ -f "$APP_SOURCE/package.json" ]; then
-		DETECTED="node:20"
-	elif [ -f "$APP_SOURCE/requirements.txt" ]; then
-		DETECTED="python:3.11"
-	else
-		DETECTED="ruby:latest"
-	fi
-
-	echo "--- No .base-image found. Auto-detected $DETECTED ---"
-	echo "$DETECTED" > "$BASE_IMAGE_FILE"
-	export BASE_IMAGE="$DETECTED"
+	export BASE_IMAGE="ruby:latest"
 fi
 
 # Create a tag friendly version (e.g., ruby-latest)
@@ -35,11 +37,11 @@ export BASE_IMAGE_TAG=$(echo "$BASE_IMAGE" | tr ':' '-')
 # Generate a unique ID based on the path (e.g., "my-ruby-app-8a2f")
 # This prevents different projects from clobbering each other
 if command -v md5 >/dev/null 2>&1; then
-	PROJ_HASH=$(echo "$APP_SOURCE" | md5 | cut -c 1-4)
+	PROJ_HASH=$(echo "$PROJECT_ROOT" | md5 | cut -c 1-4)
 else
-	PROJ_HASH=$(echo "$APP_SOURCE" | md5sum | cut -c 1-4)
+	PROJ_HASH=$(echo "$PROJECT_ROOT" | md5sum | cut -c 1-4)
 fi
-PROJ_NAME=$(basename "$APP_SOURCE" | tr '[:upper:]' '[:lower:]' | tr -cd '[:alnum:]')
+PROJ_NAME=$(basename "$PROJECT_ROOT" | tr '[:upper:]' '[:lower:]' | tr -cd '[:alnum:]')
 export IMAGE_NAME="$IMAGE_PREFIX-$BASE_IMAGE_TAG"
 export CONTAINER_NAME="$IMAGE_NAME-$PROJ_NAME-$PROJ_HASH"
 
@@ -48,11 +50,37 @@ export USER_ID=$(id -u)
 export GROUP_ID=$(id -g)
 
 # --- COMMANDS ---
+clide_init() {
+	if [ -n "$PROJECT_ROOT" ]; then
+		echo "--- Already inside a CLIDE project at $PROJECT_ROOT ---"
+		exit 0
+	fi
+
+	# Simple auto-detection for the initial file
+	if [ -f "Gemfile" ]; then DETECTED="ruby:latest"
+	elif [ -f "package.json" ]; then DETECTED="node:20"
+	elif [ -f "requirements.txt" ]; then DETECTED="python:3.11"
+	else DETECTED="ruby:latest"; fi
+
+	echo "$DETECTED" > "$CURRENT_DIR/.base-image"
+	echo "--- Initialised CLIDE project in $CURRENT_DIR (.base-image: $DETECTED) ---"
+}
+
 clide_stop() {
+	# Global stop of all containers
 	if [ "$1" == "-a" ]; then
 		echo "--- Stopping ALL clide containers ---"
 		docker ps --filter "name=$IMAGE_PREFIX-" -aq | xargs -r docker stop
-	elif [ "$(docker ps -q -f name=$CONTAINER_NAME)" ]; then
+	fi
+
+	# Check if we are actually in a project for a local stop
+	if [ -z "$PROJECT_ROOT" ]; then
+		echo "❌ Error: Not inside a CLIDE project."
+		echo "Navigate to a project directory or use 'clide stop -a' to stop everything."
+		exit 1
+	fi
+
+	if [ "$(docker ps -q -f name=$CONTAINER_NAME)" ]; then
 		echo "--- Stopping $PROJ_NAME ---"
 		docker stop "$CONTAINER_NAME"
 	else
@@ -67,7 +95,16 @@ clide_clean() {
 }
 
 clide_start() {
-	echo "Starting Clide PDE"
+	echo "Starting CLIDE"
+	if [ -z "$PROJECT_ROOT" ]; then
+		echo "❌ Error: Not a CLIDE project (no .base-image found)."
+		echo "Run 'clide init' to initialise this folder, or 'clide start' from a subfolder of an existing project."
+		exit 1
+	fi
+
+	# Now use PROJECT_ROOT instead of PWD for all logic
+	export APP_SOURCE="$PROJECT_ROOT"
+
 	# 1. CHECK FOR UPDATES
 	# Get the creation timestamp of the local image (if it exists)
 	IMAGE_TIME=$(docker image inspect -f '{{.Created}}' "$IMAGE_NAME" 2>/dev/null)
@@ -139,32 +176,33 @@ clide_check() {
 	echo "User ID: $(id -u)"
 	# Cross-platform Group Name lookup
 	if command -v getent >/dev/null 2>&1; then
-	    # Linux way
-	    GROUP_NAME=$(getent group $(id -g) | cut -d: -f1)
+		# Linux way
+		GROUP_NAME=$(getent group $(id -g) | cut -d: -f1)
 	else
-	    # macOS way
-	    GROUP_NAME=$(id -gn)
+		# macOS way
+		GROUP_NAME=$(id -gn)
 	fi
 
 	echo "Group ID: $(id -g) ($GROUP_NAME)"
 
 	echo ""
 	echo "--- Project Context ---"
-	echo "Current Dir: $APP_SOURCE"
-	if [ -f "$APP_SOURCE/.base-image" ]; then
-		echo ".base-image: $(cat "$APP_SOURCE/.base-image")"
+	echo "Current Project: $PROJECT_ROOT"
+	if [ -f "$PROJECT_ROOT/.base-image" ]; then
+		echo ".base-image: $(cat "$PROJECT_ROOT/.base-image")"
 	else
-		echo ".base-image: NOT FOUND (Will auto-detect on start)"
+		echo ".base-image: NOT FOUND"
 	fi
 }
 
 clide_usage(){
-	echo "Usage: clide {start|stop|clean|check|version}"
+	echo "Usage: clide {init|start|stop|clean|check|version}"
 	clide_version
 }
 
 # --- DISPATCHER ---
 case "$1" in
+	init)		clide_init ;;
 	start)  	clide_start ;;
 	stop)   	clide_stop "$2" ;;
 	clean)  	clide_clean ;;
