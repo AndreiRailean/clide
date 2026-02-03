@@ -1,0 +1,4 @@
+container-state/.local
+.DS_Store
+src/.nvimlog
+.build_hash
