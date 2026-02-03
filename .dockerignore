@@ -1,0 +1,22 @@
+# Ignore Git history
+.git
+.gitignore
+.gitmodules
+
+# Ignore local build tracking
+.build_hash
+.clide-state/
+.docker_data/
+
+# Ignore documentation and metadata
+README.md
+LICENSE
+.DS_Store
+
+# Ignore the clide executable itself 
+# (It runs on the host, not needed inside the image)
+clide
+
+# Ignore potential project files if you test inside this folder
+.base-image
+
