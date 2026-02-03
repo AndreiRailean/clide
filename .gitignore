@@ -1,5 +1,10 @@
-container-state/.local
-.DS_Store
-src/.nvimlog
-.build_hash
+.clide-state/
 .base-image
+.build_hash
+
+.DS_Store
+Thumbs.db
+
+src/.nvimlog
+*.log
+.docker_data/

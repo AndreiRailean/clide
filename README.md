@@ -16,7 +16,7 @@
 ##🚀 Installation
 1. *Clone the repository:*
 ```bash
-git clone https://github.com ~/.clide
+git clone git@github.com:AndreiRailean/clide.git ~/.clide
 ```
 
 2. *Add to your PATH:*
