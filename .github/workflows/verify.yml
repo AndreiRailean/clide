@@ -1,0 +1,50 @@
+name: Project Verification
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # 1. Verify Checksum Integrity
+      - name: Verify install.sh Checksum
+        run: |
+          ACTUAL_HASH=$(sha256sum install.sh | cut -d ' ' -f 1)
+          EXPECTED_HASH=$(cat checksum.txt | cut -d ' ' -f 1)
+          if [ "$ACTUAL_HASH" != "$EXPECTED_HASH" ]; then
+            echo "❌ Error: checksum.txt does not match the current install.sh!"
+            echo "Run 'sha256sum install.sh > checksum.txt' locally and commit the change."
+            exit 1
+          fi
+          echo "✅ Checksum verified."
+
+      # 2. Lint Shell Scripts (CLI and Installer)
+      - name: Run ShellCheck
+        uses: ludeeus/action-shellcheck@master
+        with:
+          ignore: .clide-state # Ignore hidden state folders
+        # Checks for common bash pitfalls and syntax errors
+
+      # 3. Lint Dockerfile
+      - name: Lint Dockerfile
+        uses: hadolint/hadolint-action@v3.1.0
+        with:
+          dockerfile: Dockerfile
+        # Ensures Docker best practices are followed (e.g., pinned versions)
+
+      # 4. Test Docker Build
+      - name: Test Docker Image Build
+        run: docker build . --file Dockerfile --tag clide-test
+        # Ensures the container can actually be built successfully
+
+      # 5. Check that clide is executable
+      - name: Permissions Check
+        run: if [ ! -x "./clide" ]; then echo "clide must be executable"; exit 1; fi
+
+
