@@ -14,6 +14,23 @@ CLIDE defaults to a few base images, but can easily be configured to run on any 
 - Resource Aware: Built-in safeguards for CPU and Memory usage to keep your host system snappy.
 - Zero-Config Workflow: Drop into any folder and type clide start.
 
+## Commands
+```
+Usage: clide <command> [options]
+
+Commands:
+  init        Initialise a project (creates .base-image)
+  start       Launch or re-attach to the IDE for this project
+  stop        Stop the container for the current directory
+  stop -a     Stop ALL active CLIDE containers
+  stop [name] Stop a specific container by name
+  list        List all currently running CLIDE environments
+  check       Run system diagnostics and check project context
+  update      Pull the latest CLIDE code and rebuild images
+  clean       Prune orphaned Docker networks and volumes
+  version     Show the current CLIDE version
+```
+
 ## 🛠 Prerequisites
 - Docker Desktop or Docker Engine with the Compose plugin.
 - A terminal with bash or zsh.

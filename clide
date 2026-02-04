@@ -242,9 +242,25 @@ clide_check() {
 	fi
 }
 
-clide_usage(){
-	echo "Usage: clide {init|start|stop|clean|check|version|update|list}"
-	clide_version
+clide_help() {
+    echo "CLIDE - Containerised Lightweight IDE (v$CLIDE_VERSION)"
+    echo ""
+    echo "Usage: clide <command> [options]"
+    echo ""
+    echo "Commands:"
+    echo "  init        Initialise a project (creates .base-image)"
+    echo "  start       Launch or re-attach to the IDE for this project"
+    echo "  stop        Stop the container for the current directory"
+    echo "  stop -a     Stop ALL active CLIDE containers"
+    echo "  stop [name] Stop a specific container by name"
+    echo "  list        List all currently running CLIDE environments"
+    echo "  check       Run system diagnostics and check project context"
+    echo "  update      Pull the latest CLIDE code and rebuild images"
+    echo "  clean       Prune orphaned Docker networks and volumes"
+    echo "  version     Show the current CLIDE version"
+    echo ""
+    echo "Example:"
+    echo "  clide start"
 }
 
 clide_list(){
@@ -312,6 +328,6 @@ case "$1" in
 		;;
 	*)      	
 		show_update_notice	
-		clide_usage ; exit 1 
+		clide_help; exit 1 
 		;;
 esac
