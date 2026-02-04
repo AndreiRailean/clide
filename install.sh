@@ -17,40 +17,6 @@ fi
 # Ensure clide is executable
 chmod +x "$CLIDE_DIR/clide"
 
-update_conf_old(){
-	# Define the lines to be added
-	PATH_LINE='export PATH="$PATH:$HOME/.clide"'
-	INIT_LINE='eval "$(clide shell-init)"'
-
-	# Detect the target config file
-	case "$SHELL" in
-		*/zsh)  CONF_FILE="$HOME/.zshrc" ;;
-		*/bash) CONF_FILE="$HOME/.bashrc" ;;
-		*)      CONF_FILE="$HOME/.profile" ;;
-	esac
-
-	echo "📝 Updating $CONF_FILE..."
-
-	# Create file if it doesn't exist
-	touch "$CONF_FILE"
-
-	# Function to append if line is missing
-	append_if_missing() {
-		local line="$1"
-		local file="$2"
-		if ! grep -Fq "$line" "$file"; then
-			echo "$line" >> "$file"
-			return 0
-		else
-			echo "   (Already present in $file, skipping...)"
-			return 1
-		fi
-	}
-
-	append_if_missing "$PATH_LINE" "$CONF_FILE"
-	append_if_missing "$INIT_LINE" "$CONF_FILE"
-}
-
 update_conf(){
 	# Define the block content
 	CLIDE_BLOCK_START="# >>> clide initialize >>>"
@@ -89,8 +55,7 @@ echo "✨ Config block updated in $CONF_FILE"
 
 }
 
-echo "Do you want to automatically update your $CONFI_FILE?"
-read -p "(y/n) " -n 1 -r
+read -p "Do you want to automatically update your $CONF_FILE? (y/n) " -n 1 -r </dev/tty
 echo
 if [[ $REPLY =~ ^[Yy]$ ]]; then
 	update_conf
