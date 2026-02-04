@@ -352,7 +352,7 @@ case "$1" in
 		;;
 	list)		
 		show_update_notice
-		clide_list 
+		clide_list "$2"
 		;;
 	version) 
 		show_update_notice
