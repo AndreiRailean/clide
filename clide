@@ -8,13 +8,13 @@ CLIDE_DIR="$(cd "$(dirname "${BASH_SOURCE}")" && pwd)"
 CURRENT_DIR="$(pwd)"
 
 if [[ "$CLIDE_DIR/" == *"/devclide/"* ]]; then
-    export EXECUTABLE="devclide"
-    export CLIDE_MODE="DEVELOPMENT"
-    export IMAGE_PREFIX="$PROJECT_NAME-dev"
+	export EXECUTABLE="devclide"
+	export CLIDE_MODE="DEVELOPMENT"
+	export IMAGE_PREFIX="$PROJECT_NAME-dev"
 else
-    export EXECUTABLE="clide"
-    export CLIDE_MODE="PRODUCTION"
-    export IMAGE_PREFIX="$PROJECT_NAME"
+	export EXECUTABLE="clide"
+	export CLIDE_MODE="PRODUCTION"
+	export IMAGE_PREFIX="$PROJECT_NAME"
 fi
 
 # Function to find the project root by looking for .base-image
@@ -334,7 +334,7 @@ clide_shell_init() {
 		*)
 			# Shell not detected
 			echo "# clide: could not detect shell (detected: $shell_type)"
-            		return 0 
+			return 0 
 			;;
 	esac
 }
@@ -355,6 +355,54 @@ clide_debug() {
 	echo "--- User Variables ---"
 	echo "User ID:               $USER_ID"
 	echo "Group ID:              $GROUP_ID"
+}
+
+clide_uninstall() {
+	echo -e "\033[1;31m⚠️  WARNING: This will remove CLIDE and all its configurations.\033[0m"
+	read -p "Are you sure you want to proceed? (y/n) " -n 1 -r
+	echo
+	if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+		echo "Uninstall cancelled."
+		exit 0
+	fi
+
+	# 1. Stop all active containers
+	clide_stop "-a"
+
+	# 2. Remove the shell block
+	case "$SHELL" in
+		*/zsh)  CONF_FILE="$HOME/.zshrc" ;;
+		*/bash) CONF_FILE="$HOME/.bashrc" ;;
+		*)      CONF_FILE="$HOME/.profile" ;;
+	esac
+
+	if [ -f "$CONF_FILE" ]; then
+		echo "📝 Removing config block from $CONF_FILE..."
+		if [[ "$(uname)" == "Darwin" ]]; then
+			sed -i '' "/# >>> clide initialize >>>/,/# <<< clide initialize <<</d" "$CONF_FILE"
+		else
+			sed -i "/# >>> clide initialize >>>/,/# <<< clide initialize <<</d" "$CONF_FILE"
+		fi
+	fi
+
+	# 3. Prompt for directory deletion
+	echo ""
+	read -p "Do you want to delete the source directory at $CLIDE_DIR? (y/n) " -n 1 -r
+	echo
+	if [[ $REPLY =~ ^[Yy]$ ]]; then
+		echo "📂 Deleting CLIDE source files..."
+		# We use a subshell to delete the directory after a 1-second delay 
+		# to allow the current script to finish execution and exit cleanly.
+		(sleep 1 && rm -rf "$CLIDE_DIR") &
+		echo "✨ CLIDE has been uninstalled. Please restart your terminal."
+	else
+		echo "✅ Config removed, but source files kept at: $CLIDE_DIR"
+		echo "   To remove manually later: rm -rf $CLIDE_DIR"
+	fi
+
+	echo "Thank you for using CLIDE"
+
+	exit 0
 }
 
 check_for_updates
@@ -396,6 +444,9 @@ case "$1" in
 		;;
 	debug)
 		clide_debug
+		;;
+	uninstall)
+		clide_uninstall
 		;;
 	*)      	
 		show_update_notice	

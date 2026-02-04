@@ -38,6 +38,14 @@ Commands:
 - A terminal with bash or zsh.
 
 ## 🚀 Installation
+
+### Automatic
+Run an interactive installer in your terminal
+```bash
+sh -c "$(curl -fsSL https://raw.githubusercontent.com/AndreiRailean/clide/main/install.sh)"
+```
+
+### Manual
 1. **Clone the repository:**
 ```bash
 git clone git@github.com:AndreiRailean/clide.git ~/.clide
@@ -106,6 +114,13 @@ If you wish to update to latest version, run
 ```bash
 clide update
 ```
+
+### 🗑 Removal
+To remove CLIDE and clean up your shell configuration:
+```bash
+clide uninstall
+```
+You will get a few prompts to confirm and all traces of clide will be removed from your system
 
 ## ⚙️ Configuration
 
