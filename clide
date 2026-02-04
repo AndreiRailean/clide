@@ -1,11 +1,21 @@
 #!/bin/bash
 CLIDE_VERSION="0.1.0"
 
-IMAGE_PREFIX="clide"
+PROJECT_NAME="clide"
 
 # Get the absolute path of the directory where this script lives
 CLIDE_DIR="$(cd "$(dirname "${BASH_SOURCE}")" && pwd)"
 CURRENT_DIR="$(pwd)"
+
+if [[ "$CLIDE_DIR/" == *"/devclide/"* ]]; then
+    export EXECUTABLE="devclide"
+    export CLIDE_MODE="DEVELOPMENT"
+    export IMAGE_PREFIX="$PROJECT_NAME-dev"
+else
+    export EXECUTABLE="clide"
+    export CLIDE_MODE="PRODUCTION"
+    export IMAGE_PREFIX="$PROJECT_NAME"
+fi
 
 # Function to find the project root by looking for .base-image
 find_project_root() {
@@ -44,7 +54,7 @@ fi
 PROJ_NAME=$(basename "$PROJECT_ROOT" | tr '[:upper:]' '[:lower:]' | tr -cd '[:alnum:]')
 export IMAGE_NAME="$IMAGE_PREFIX-$BASE_IMAGE_TAG"
 export CONTAINER_NAME="$IMAGE_NAME-$PROJ_NAME-$PROJ_HASH"
-export PROJECT_HOSTNAME="clide-$PROJ_NAME-$PROJ_HASH"
+export PROJECT_HOSTNAME="$PROJECT_NAME-$PROJ_NAME-$PROJ_HASH"
 
 # Export IDs for Docker Compose
 export USER_ID=$(id -u)
@@ -80,7 +90,7 @@ clide_stop() {
 			echo "--- Stopping specific container: $1 ---"
 			docker stop "$1"
 		else
-			echo "❌ Error: Invalid container name. Use 'clide list' to find the name."
+			echo "❌ Error: Invalid container name. Use '$EXECUTABLE list' to find the name."
 		fi
 		return 0
 	fi
@@ -89,7 +99,7 @@ clide_stop() {
 	# Check if we are actually in a project for a local stop
 	if [ -z "$PROJECT_ROOT" ]; then
 		echo "❌ Error: Not inside a CLIDE project."
-		echo "Navigate to a project directory or use 'clide stop -a' to stop everything."
+		echo "Navigate to a project directory or use '$EXECUTABLE stop -a' to stop everything."
 		exit 1
 	fi
 
@@ -137,7 +147,7 @@ check_for_updates() {
 
 show_update_notice() {
 	if [ "$CLIDE_UPDATE_PENDING" = "true" ]; then
-		echo -e "\n\033[1;33m[CLIDE] 📢 Update available! Run 'clide update' on host.\033[0m\n"
+		echo -e "\n\033[1;33m[CLIDE] 📢 Update available! Run '$EXECUTABLE update' on host.\033[0m\n"
 	fi
 }
 
@@ -145,7 +155,7 @@ clide_start() {
 	echo "Starting CLIDE"
 	if [ -z "$PROJECT_ROOT" ]; then
 		echo "❌ Error: Not a CLIDE project (no .base-image found)."
-		echo "Run 'clide init' to initialise this folder, or 'clide start' from a subfolder of an existing project."
+		echo "Run '$EXECUTABLE init' to initialise this folder, or '$EXECUTABLE start' from a subfolder of an existing project."
 		exit 1
 	fi
 
@@ -198,6 +208,9 @@ clide_start() {
 
 clide_version(){
 	echo "CLIDE Version: $CLIDE_VERSION"
+	if [ "$CLIDE_MODE" == "DEVELOPMENT" ] ; then
+		echo "Development Mode"
+	fi
 }
 
 clide_check() {
@@ -326,6 +339,23 @@ clide_shell_init() {
 	esac
 }
 
+clide_debug() {
+	echo "--- CLIDE Debug Info ---"
+	echo "Mode:                  $CLIDE_MODE"
+	echo "Script Path (IDE_DIR): $CLIDE_DIR"
+	echo "Current Dir (PWD):     $(pwd)"
+	echo "Project Root:          ${PROJECT_ROOT:-NOT SET}"
+	echo "App Source:            $APP_SOURCE"
+	echo ""
+	echo "--- Docker Variables ---"
+	echo "Container Name:        $CONTAINER_NAME"
+	echo "Image Name:            $IMAGE_NAME"
+	echo "Base Image:            $BASE_IMAGE"
+	echo ""
+	echo "--- User Variables ---"
+	echo "User ID:               $USER_ID"
+	echo "Group ID:              $GROUP_ID"
+}
 
 check_for_updates
 
@@ -363,6 +393,9 @@ case "$1" in
 		;;
 	shell-init)
 		clide_shell_init "$2"
+		;;
+	debug)
+		clide_debug
 		;;
 	*)      	
 		show_update_notice	

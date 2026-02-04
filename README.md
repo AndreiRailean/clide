@@ -28,6 +28,8 @@ Commands:
   check       Run system diagnostics and check project context
   update      Pull the latest CLIDE code and rebuild images
   clean       Prune orphaned Docker networks and volumes
+  shell-init  Initialise shell autocompletion with auto-detected shell
+  shell-init [shell]  Initialise shell autocompletion with supplied shell (zsh or bash)
   version     Show the current CLIDE version
 ```
 
@@ -45,7 +47,10 @@ git clone git@github.com:AndreiRailean/clide.git ~/.clide
 Add the following to your ~/.zshrc or ~/.bashrc:
 ```bash
 export PATH="$PATH:$HOME/.clide"
+eval "$(clide shell-init)
+
 ```
+This add `clide` tool to your shell and enables shell completions for it
 
 3. **Reload your shell:**
 ```bash
