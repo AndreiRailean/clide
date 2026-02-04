@@ -78,6 +78,13 @@ Check if your system meets the requirements and see current project context:
 clide check
 ```
 
+### Updates
+CLIDE will check for updates every 6 hours and will present you with a notice that a new version is available
+If you wish to update to latest version, run
+```bash
+clide update
+```
+
 ## ⚙️ Configuration
 
 ### Project Root

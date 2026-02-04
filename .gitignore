@@ -8,3 +8,4 @@ Thumbs.db
 src/.nvimlog
 *.log
 .docker_data/
+.last_update_check
