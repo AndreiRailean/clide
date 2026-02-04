@@ -122,6 +122,12 @@ clide uninstall
 ```
 You will get a few prompts to confirm and all traces of clide will be removed from your system
 
+## Security
+Verify integrity of files by comparing the checksums
+```bash
+cat checksum.txt | shasum -a 256 --check
+```
+
 ## ⚙️ Configuration
 
 ### Project Root
