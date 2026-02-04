@@ -219,6 +219,12 @@ clide_check() {
 		echo "Compose: NOT FOUND ❌ (Ensure Docker Compose V2 is installed)"
 	fi
 
+	# Check Docker Context
+	if command -v docker >/dev/null 2>&1; then
+		CURRENT_CONTEXT=$(docker context show)
+		echo "Docker Context: $CURRENT_CONTEXT ✅"
+	fi
+
 	# Check Permissions/Environment
 	echo "User ID: $(id -u)"
 	# Cross-platform Group Name lookup
@@ -243,27 +249,35 @@ clide_check() {
 }
 
 clide_help() {
-    echo "CLIDE - Containerised Lightweight IDE (v$CLIDE_VERSION)"
-    echo ""
-    echo "Usage: clide <command> [options]"
-    echo ""
-    echo "Commands:"
-    echo "  init        Initialise a project (creates .base-image)"
-    echo "  start       Launch or re-attach to the IDE for this project"
-    echo "  stop        Stop the container for the current directory"
-    echo "  stop -a     Stop ALL active CLIDE containers"
-    echo "  stop [name] Stop a specific container by name"
-    echo "  list        List all currently running CLIDE environments"
-    echo "  check       Run system diagnostics and check project context"
-    echo "  update      Pull the latest CLIDE code and rebuild images"
-    echo "  clean       Prune orphaned Docker networks and volumes"
-    echo "  version     Show the current CLIDE version"
-    echo ""
-    echo "Example:"
-    echo "  clide start"
+	echo "CLIDE - Containerised Lightweight IDE (v$CLIDE_VERSION)"
+	echo ""
+	echo "Usage: clide <command> [options]"
+	echo ""
+	echo "Commands:"
+	echo "  init        Initialise a project (creates .base-image)"
+	echo "  start       Launch or re-attach to the IDE for this project"
+	echo "  stop        Stop the container for the current directory"
+	echo "  stop -a     Stop ALL active CLIDE containers"
+	echo "  stop [name] Stop a specific container by name"
+	echo "  list        List all currently running CLIDE environments"
+	echo "  check       Run system diagnostics and check project context"
+	echo "  update      Pull the latest CLIDE code and rebuild images"
+	echo "  clean       Prune orphaned Docker networks and volumes"
+	echo "  shell-init  Initialise shell autocompletion with auto-detected shell"
+	echo "  shell-init [shell]  Initialise shell autocompletion with supplied shell (zsh or bash)"
+	echo "  version     Show the current CLIDE version"
+	echo ""
+	echo "Example:"
+	echo "  clide start"
 }
 
 clide_list(){
+	# If called with --raw, just return names for completion scripts
+	if [[ "$1" == "--raw" ]]; then
+		docker ps --filter "name=$IMAGE_PREFIX-" --format "{{.Names}}"
+		return 0
+	fi
+
 	echo "--- Active CLIDE Environments ---"
 	# Format: Container Name | Base Image | Status
 	docker ps --filter "name=$IMAGE_PREFIX-" --format "table {{.Names}}\t{{.Image}}\t{{.Status}}"
@@ -289,6 +303,27 @@ clide_update() {
 		# Optional: You can remove this echo entirely if you want zero output
 		echo "--- CLIDE is already up to date ---"
 	fi
+}
+
+clide_shell_init() {
+	# Detect shell from argument, or fall back to $SHELL environment variable
+	local shell_type="${1:-$(basename "$SHELL")}"
+
+	case "$shell_type" in
+		zsh)
+			echo "autoload -Uz +X compinit && compinit"
+			echo "autoload -Uz +X bashcompinit && bashcompinit"
+			echo "source \"$CLIDE_DIR/completions/clide.bash\""
+			;;
+		bash)
+			echo "source \"$CLIDE_DIR/completions/clide.bash\""
+			;;
+		*)
+			# Shell not detected
+			echo "# clide: could not detect shell (detected: $shell_type)"
+            		return 0 
+			;;
+	esac
 }
 
 
@@ -325,6 +360,9 @@ case "$1" in
 		;;
 	update)
 		clide_update
+		;;
+	shell-init)
+		clide_shell_init "$2"
 		;;
 	*)      	
 		show_update_notice	
