@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 CLIDE_VERSION="0.1.0"
 
 PROJECT_NAME="clide"
@@ -257,6 +257,7 @@ clide_check() {
 }
 
 clide_help() {
+	echo "CLIDE---HELP"
 	echo "CLIDE - Containerised Lightweight IDE (v$CLIDE_VERSION)"
 	echo ""
 	echo "Usage: clide <command> [options]"
@@ -320,14 +321,11 @@ clide_completions() {
 	case "$shell_type" in
 		zsh)
 			echo "autoload -Uz +X compinit && compinit"
-			echo "source \"$CLIDE_DIR/completions/clide.zsh\""
+			echo "autoload -Uz +X bashcompinit && bashcompinit"
+			echo "source \"$CLIDE_DIR/completions/clide.bash\""
 			;;
 		bash)
 			echo "source \"$CLIDE_DIR/completions/clide.bash\""
-			;;
-		fish)
-			# For fish, output the content of the completion file
-			cat "$CLIDE_DIR/completions/clide.fish"
 			;;
 		*)
 			echo "# clide: completions not available for shell: $shell_type" >&2
@@ -435,6 +433,10 @@ case "$1" in
 		;;
 	update)
 		clide_update
+		;;
+	shell-init)
+		# TODO: remove shell-init in future version
+		clide_completions "$2"
 		;;
 	completions)
 		clide_completions "$2"

@@ -1,3 +1,4 @@
+#!/usr/bin/env bash
 _clide_completions() {
 	local cur prev opts exe
 	COMPREPLY=()
@@ -22,10 +23,11 @@ _clide_completions() {
 			done
 			return 0
 			;;
+		*)
+			;;
 	esac
 
-	local IFS=$'\n'
-	COMPREPLY=($(compgen -W "${opts}" -- "$cur"))
+	while IFS='' read -r line; do COMPREPLY+=("$line"); done < <( compgen -W "${opts}" -- "${cur}" )
 }
 
 complete -F _clide_completions clide

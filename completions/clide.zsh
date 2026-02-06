@@ -1,5 +1,5 @@
 #!/bin/zsh
-# shellcheck shell=bash
+# shellcheck disable=all
 #compdef clide devclide
 
 _clide() {
@@ -9,14 +9,14 @@ _clide() {
 	_arguments -C \
 		'1:command:(init start stop list check update clean version help debug completions uninstall)' \
 		'*::options:->args'
-
 	case $state in
 		args)
 			case $words[2] in
 				stop)
-					local running_containers
-					running_containers=($(clide list --raw 2>/dev/null))
-					_values 'running containers' $running_containers
+					__clide_stop
+					#local running_containers
+					#running_containers=($(clide list --raw 2>/dev/null))
+					#_values 'running containers' $running_containers
 					;;
 				*)
 					# Default completion for other commands
@@ -37,6 +37,12 @@ _clide() {
 			esac
 			;;
 	esac
+}
+
+__clide_stop () {
+	local running_containers
+	running_containers=($(clide list --raw 2>/dev/null))
+	_values 'running containers' $running_containers
 }
 
 _clide "$@"
