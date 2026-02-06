@@ -3,9 +3,8 @@
 SESSION="ruby-dev"
 
 # Check if session already exists
-tmux has-session -t $SESSION 2>/dev/null
-
-if [ $? != 0 ]; then
+if ! tmux has-session -t $SESSION 2>/dev/null
+then
 	# Create a new session, detached (-d)
 	tmux new-session -d -s $SESSION -n "editor"
 
