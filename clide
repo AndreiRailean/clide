@@ -4,7 +4,7 @@ CLIDE_VERSION="0.1.0"
 PROJECT_NAME="clide"
 
 # Get the absolute path of the directory where this script lives
-CLIDE_DIR="$(cd "$(dirname "${BASH_SOURCE}")" && pwd)"
+CLIDE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CURRENT_DIR="$(pwd)"
 
 if [[ "$CLIDE_DIR/" == *"/devclide/"* ]]; then
@@ -36,13 +36,15 @@ PROJECT_ROOT=$(find_project_root "$CURRENT_DIR")
 BASE_IMAGE_FILE="$PROJECT_ROOT/.base-image"
 
 if [ -f "$BASE_IMAGE_FILE" ]; then
-	export BASE_IMAGE=$(cat "$BASE_IMAGE_FILE" | xargs)
+	BASE_IMAGE=$(cat "$BASE_IMAGE_FILE" | xargs)
+	export BASE_IMAGE
 else
 	export BASE_IMAGE="ruby:latest"
 fi
 
 # Create a tag friendly version (e.g., ruby-latest)
-export BASE_IMAGE_TAG=$(echo "$BASE_IMAGE" | tr ':' '-')
+BASE_IMAGE_TAG=$(echo "$BASE_IMAGE" | tr ':' '-')
+export BASE_IMAGE_TAG
 
 # Generate a unique ID based on the path (e.g., "my-ruby-app-8a2f")
 # This prevents different projects from clobbering each other
@@ -57,8 +59,8 @@ export CONTAINER_NAME="$IMAGE_NAME-$PROJ_NAME-$PROJ_HASH"
 export PROJECT_HOSTNAME="$PROJECT_NAME-$PROJ_NAME-$PROJ_HASH"
 
 # Export IDs for Docker Compose
-export USER_ID=$(id -u)
-export GROUP_ID=$(id -g)
+USER_ID=$(id -u); export USER_ID
+GROUP_ID=$(id -g); export GROUP_ID
 
 # --- COMMANDS ---
 clide_init() {
@@ -103,7 +105,7 @@ clide_stop() {
 		exit 1
 	fi
 
-	if [ "$(docker ps -q -f name=$CONTAINER_NAME)" ]; then
+	if [ "$(docker ps -q -f name="$CONTAINER_NAME")" ]; then
 		echo "--- Stopping $PROJ_NAME ---"
 		docker stop "$CONTAINER_NAME"
 	else
@@ -167,13 +169,6 @@ clide_start() {
 	IMAGE_TIME=$(docker image inspect -f '{{.Created}}' "$IMAGE_NAME" 2>/dev/null)
 
 	if [ -n "$IMAGE_TIME" ]; then
-		# Convert ISO 8601 timestamp to Unix epoch
-		IMAGE_EPOCH=$(date -j -f "%Y-%m-%dT%H:%M:%S" "${IMAGE_TIME%.*}" "+%s" 2>/dev/null || date -d "$IMAGE_TIME" "+%s")
-
-		# Check if Dockerfile or any file in configs/ is newer than the image
-		# We use 'find' to get the max mtime of the build context
-		LATEST_MOD=$(find "$CLIDE_DIR/Dockerfile" "$CLIDE_DIR/configs" -type f -exec stat -f "%m" {} + 2>/dev/null | sort -nr | head -n1)
-
 		# Check for md5 (macOS) or md5sum (Linux)
 		if command -v md5 >/dev/null 2>&1; then
 			FILES_HASH=$(find "$CLIDE_DIR/Dockerfile" "$CLIDE_DIR/configs" -type f -exec md5 -q {} + | md5 -q)
@@ -194,7 +189,7 @@ clide_start() {
 	fi
 
 	# 2. Ensure the container is running in the background
-	if [ ! "$(docker ps -q -f name=$CONTAINER_NAME)" ]; then
+	if [ ! "$(docker ps -q -f name="$CONTAINER_NAME")" ]; then
 		echo "--- Launching PDE for $PROJ_NAME ---"
 		# -d runs it in the background
 		COMPOSE_PROJECT_NAME="$CONTAINER_NAME" \
@@ -203,7 +198,7 @@ clide_start() {
 
 	# 3. Always use 'exec' to enter the environment
 	# This calls your tmux-start.sh which handles create-or-attach
-	docker exec -it $CONTAINER_NAME tmux-start
+	docker exec -it "$CONTAINER_NAME" tmux-start
 }
 
 clide_version(){
@@ -243,7 +238,7 @@ clide_check() {
 	# Cross-platform Group Name lookup
 	if command -v getent >/dev/null 2>&1; then
 		# Linux way
-		GROUP_NAME=$(getent group $(id -g) | cut -d: -f1)
+		GROUP_NAME=$(getent group "$(id -g)" | cut -d: -f1)
 	else
 		# macOS way
 		GROUP_NAME=$(id -gn)
@@ -276,8 +271,8 @@ clide_help() {
 	echo "  check       Run system diagnostics and check project context"
 	echo "  update      Pull the latest CLIDE code and rebuild images"
 	echo "  clean       Prune orphaned Docker networks and volumes"
-	echo "  shell-init  Initialise shell autocompletion with auto-detected shell"
-	echo "  shell-init [shell]  Initialise shell autocompletion with supplied shell (zsh or bash)"
+	echo "  completions  Initialise shell autocompletion with auto-detected shell"
+	echo "  completions [shell]  Initialise shell autocompletion with supplied shell (zsh, bash, or fish)"
 	echo "  version     Show the current CLIDE version"
 	echo ""
 	echo "Example:"
@@ -302,7 +297,7 @@ clide_update() {
 
 	# Check how many commits the local branch is behind
 	# @{u} refers to the upstream branch (origin/main)
-	BEHIND_COUNT=$(git -C "$CLIDE_DIR" rev-list --count HEAD..@{u} 2>/dev/null)
+	BEHIND_COUNT=$(git -C "$CLIDE_DIR" rev-list --count "HEAD..@{u}" 2>/dev/null)
 
 	if [[ "$BEHIND_COUNT" -gt 0 ]]; then
 		echo "--- Updating CLIDE from GitHub ($BEHIND_COUNT new commits) ---"
@@ -318,23 +313,25 @@ clide_update() {
 	fi
 }
 
-clide_shell_init() {
+clide_completions() {
 	# Detect shell from argument, or fall back to $SHELL environment variable
 	local shell_type="${1:-$(basename "$SHELL")}"
 
 	case "$shell_type" in
 		zsh)
 			echo "autoload -Uz +X compinit && compinit"
-			echo "autoload -Uz +X bashcompinit && bashcompinit"
-			echo "source \"$CLIDE_DIR/completions/clide.bash\""
+			echo "source \"$CLIDE_DIR/completions/clide.zsh\""
 			;;
 		bash)
 			echo "source \"$CLIDE_DIR/completions/clide.bash\""
 			;;
+		fish)
+			# For fish, output the content of the completion file
+			cat "$CLIDE_DIR/completions/clide.fish"
+			;;
 		*)
-			# Shell not detected
-			echo "# clide: could not detect shell (detected: $shell_type)"
-			return 0 
+			echo "# clide: completions not available for shell: $shell_type" >&2
+			return 1
 			;;
 	esac
 }
@@ -439,8 +436,8 @@ case "$1" in
 	update)
 		clide_update
 		;;
-	shell-init)
-		clide_shell_init "$2"
+	completions)
+		clide_completions "$2"
 		;;
 	debug)
 		clide_debug
