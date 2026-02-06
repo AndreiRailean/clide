@@ -11,7 +11,6 @@ then
 	# Split horizontally
 	tmux split-window -h -p 30 -t $SESSION
 
-	tmux set-option -t $SESSION:1.2 remain-on-exit on
 	# Select the main editor pane
 	tmux select-pane -t 1
 fi
