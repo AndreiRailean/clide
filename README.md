@@ -2,6 +2,8 @@
 
 **CLIDE** (Containerised Lightweight IDE) is a language-agnostic, portable development environment that runs entirely inside Docker. It brings your personal Neovim, Tmux, and shell configurations to any project folder with a single command, ensuring a consistent experience across Ruby, Node, Python, and more.
 
+[![Build Checks](https://github.com/AndreiRailean/clide/actions/workflows/checks.yml/badge.svg?branch=main)](https://github.com/AndreiRailean/clide/actions/workflows/checks.yml)
+
 ## How it works
 CLIDE launches a docker container, mounts the current working directory under `/app` and starts a **tmux** session with 2 panes. Docker container runs in the background, which allows tmux sessions to be detached and re-attached. It also comes with neovim pre-installed so you can jump in to edit files and run scripts in an isolated container environment.
 
