@@ -39,7 +39,7 @@ if [ -f "$BASE_IMAGE_FILE" ]; then
 	BASE_IMAGE=$(cat "$BASE_IMAGE_FILE" | xargs)
 	export BASE_IMAGE
 else
-	export BASE_IMAGE="ruby:latest"
+	export BASE_IMAGE="ruby:4"
 fi
 
 # Create a tag friendly version (e.g., ruby-latest)
@@ -70,27 +70,46 @@ clide_init() {
 	fi
 
 	# Simple auto-detection for the initial file
-	if [ -f "Gemfile" ]; then DETECTED="ruby:latest"
+	if [ -f "Gemfile" ]; then DETECTED="ruby:4"
 	elif [ -f "package.json" ]; then DETECTED="node:20"
 	elif [ -f "requirements.txt" ]; then DETECTED="python:3.11"
-	else DETECTED="ruby:latest"; fi
+	else DETECTED="ruby:4"; fi
 
 	echo "$DETECTED" > "$CURRENT_DIR/.base-image"
 	echo "--- Initialised CLIDE project in $CURRENT_DIR (.base-image: $DETECTED) ---"
 }
 
+clide_clean() {
+	echo "--- Cleaning up old containers ---"
+	docker network prune -f
+	docker ps -a --filter "name=$IMAGE_PREFIX-" --filter status=exited -q | xargs docker rm
+}
+
 clide_stop() {
 	# Global stop of all containers
 	if [ "$1" == "-a" ]; then
-		echo "--- Stopping ALL clide containers ---"
-		docker ps --filter "name=$IMAGE_PREFIX-" -aq | xargs -r docker stop
+		local running_ids
+		running_ids=$(docker ps --filter "name=$IMAGE_PREFIX-" -q)
+
+		if [[ -z "$running_ids" ]]; then
+			echo "✅ No active CLIDE containers to stop."
+		else
+			echo "--- Stopping ALL clide containers ---"
+			echo "$running_ids" | xargs -r docker stop
+		fi
+		return 0
 	fi
 
 	# Scenario 2: Stop by specific name
 	if [[ -n "$1" ]]; then
 		if [[ "$1" == $IMAGE_PREFIX-* ]]; then
-			echo "--- Stopping specific container: $1 ---"
-			docker stop "$1"
+			found_container=$(docker ps -q -f name="$1")
+			if [ "$found_container" ]; then
+				echo "--- Stopping container: $1 ---"
+				docker stop "$1"
+			else
+				echo "❌ Error: Container '$1' is not running."
+			fi
 		else
 			echo "❌ Error: Invalid container name. Use '$EXECUTABLE list' to find the name."
 		fi
@@ -111,12 +130,6 @@ clide_stop() {
 	else
 		echo "--- No active container for this directory ---"
 	fi
-}
-
-clide_clean() {
-	echo "--- Pruning Docker networks & orphaned volumes ---"
-	docker network prune -f
-	# Add volume pruning if desired
 }
 
 check_for_updates() {
@@ -414,6 +427,7 @@ case "$1" in
 	stop)   	
 		show_update_notice
 		clide_stop "$2" 
+		clide_clean
 		;;
 	clean)  	
 		show_update_notice
