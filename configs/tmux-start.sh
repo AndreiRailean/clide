@@ -16,6 +16,6 @@ then
 fi
 
 # Attach to the session
-clear
+#clear
 tmux attach-session -t $SESSION
 

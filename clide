@@ -17,12 +17,12 @@ else
 	export IMAGE_PREFIX="$PROJECT_NAME"
 fi
 
-# Function to find the project root by looking for .base-image
+# Function to find the project root by looking for .clide_state or .base-image
 find_project_root() {
 	local dir="$1"
 	# Stop if we hit the actual system root or the user's home (to prevent pollution)
 	while [[ "$dir" != "/" && "$dir" != "$HOME" ]]; do
-		if [[ -f "$dir/.base-image" ]]; then
+		if [[ -f "$dir/.base-image" ]] || [[ -d "$dir/.clide_state" ]]; then
 			echo "$dir"
 			return 0
 		fi
@@ -32,8 +32,32 @@ find_project_root() {
 }
 
 PROJECT_ROOT=$(find_project_root "$CURRENT_DIR")
+export APP_SOURCE="$PROJECT_ROOT"
 
-BASE_IMAGE_FILE="$PROJECT_ROOT/.base-image"
+# Perform Migration if necessary
+if [ -n "$PROJECT_ROOT" ]; then
+	LEGACY_IMAGE="$PROJECT_ROOT/.base-image"
+	STATE_DIR="$PROJECT_ROOT/.clide_state"
+
+	if [ -f "$LEGACY_IMAGE" ]; then
+		echo "--- Migrating .base-image to $STATE_DIR ---"
+		mkdir -p "$STATE_DIR"
+		mv "$LEGACY_IMAGE" "$STATE_DIR/base_image"
+
+	# migrate the build hash
+	if [ -f "$PROJECT_ROOT/.build_hash" ]; then
+		mv "$PROJECT_ROOT/.build_hash" "$STATE_DIR/build_hash"
+	fi
+	fi
+fi
+
+if [ -d "$PROJECT_ROOT/.git" ] && ! grep -q ".clide_state" "$PROJECT_ROOT/.gitignore" 2>/dev/null; then
+	echo "💡 Note: Don't forget to add .clide_state/ to your .gitignore"
+fi
+
+STATE_DIR="$APP_SOURCE/.clide_state"
+LOCAL_HASH_FILE="$STATE_DIR/build_hash"
+BASE_IMAGE_FILE="$STATE_DIR/base_image"
 
 if [ -f "$BASE_IMAGE_FILE" ]; then
 	BASE_IMAGE=$(cat "$BASE_IMAGE_FILE" | xargs)
@@ -62,26 +86,48 @@ export PROJECT_HOSTNAME="$PROJECT_NAME-$PROJ_NAME-$PROJ_HASH"
 USER_ID=$(id -u); export USER_ID
 GROUP_ID=$(id -g); export GROUP_ID
 
+# Detects the appropriate Docker image based on files in a directory
+detect_base_image() {
+	local target_dir="$1"
+
+	if [ -f "$target_dir/Gemfile" ]; then
+		echo "ruby:4"
+	elif [ -f "$target_dir/package.json" ]; then
+		echo "node:22"
+	elif [ -f "$target_dir/requirements.txt" ]; then
+		echo "python:3.11"
+	else
+		echo "ruby:4"
+	fi
+}
+
 # --- COMMANDS ---
 clide_init() {
 	if [ -n "$PROJECT_ROOT" ]; then
-		echo "--- Already inside a CLIDE project at $PROJECT_ROOT ---"
+		echo "✅ Already a CLIDE project at $PROJECT_ROOT"
 		exit 0
 	fi
 
-	# Simple auto-detection for the initial file
-	if [ -f "Gemfile" ]; then DETECTED="ruby:4"
-	elif [ -f "package.json" ]; then DETECTED="node:20"
-	elif [ -f "requirements.txt" ]; then DETECTED="python:3.11"
-	else DETECTED="ruby:4"; fi
+	mkdir -p "$CURRENT_DIR/.clide_state"
 
-	echo "$DETECTED" > "$CURRENT_DIR/.base-image"
-	echo "--- Initialised CLIDE project in $CURRENT_DIR (.base-image: $DETECTED) ---"
+	local detected
+	detected=$(detect_base_image "$CURRENT_DIR")
+
+	echo "$detected" > "$CURRENT_DIR/.clide_state/base_image"
+	echo "🚀 CLIDE project initialised in $CURRENT_DIR with $detected image"
+
+	local gitignore="$CURRENT_DIR/.gitignore"
+	if [ -d "$CURRENT_DIR/.git" ] || [ -f "$gitignore" ]; then
+		if [ ! -f "$gitignore" ] || ! grep -q ".clide_state" "$gitignore"; then
+			echo ""
+			echo "💡 Tip: Add .clide_state to your .gitignore to keep your repo clean:"
+			echo "   echo \".clide_state/\" >> .gitignore"
+		fi
+	fi
 }
 
 clide_clean() {
 	echo "--- Cleaning up old containers ---"
-	docker network prune -f
 	docker ps -a --filter "name=$IMAGE_PREFIX-" --filter status=exited -q | xargs docker rm
 }
 
@@ -96,6 +142,8 @@ clide_stop() {
 		else
 			echo "--- Stopping ALL clide containers ---"
 			echo "$running_ids" | xargs -r docker stop
+			echo "$running_ids" | xargs -r docker rm
+			docker network prune -f > /dev/null
 		fi
 		return 0
 	fi
@@ -126,7 +174,7 @@ clide_stop() {
 
 	if [ "$(docker ps -q -f name="$CONTAINER_NAME")" ]; then
 		echo "--- Stopping $PROJ_NAME ---"
-		docker stop "$CONTAINER_NAME"
+		docker compose -f "$CLIDE_DIR/docker-compose.yml" -p "$CONTAINER_NAME" down
 	else
 		echo "--- No active container for this directory ---"
 	fi
@@ -169,44 +217,46 @@ show_update_notice() {
 clide_start() {
 	echo "Starting CLIDE"
 	if [ -z "$PROJECT_ROOT" ]; then
-		echo "❌ Error: Not a CLIDE project (no .base-image found)."
+		echo "❌ Error: Not a CLIDE project."
 		echo "Run '$EXECUTABLE init' to initialise this folder, or '$EXECUTABLE start' from a subfolder of an existing project."
 		exit 1
 	fi
 
-	# Now use PROJECT_ROOT instead of PWD for all logic
-	export APP_SOURCE="$PROJECT_ROOT"
+	# If the folder exists but the specific metadata is missing
+	if [ ! -f "$BASE_IMAGE_FILE" ]; then
+		echo "❌ Error: Your CLIDE project requires repair."
+		echo "👉 Run '$EXECUTABLE doctor' to repair the project metadata."
+		exit 1
+	fi
 
 	# 1. CHECK FOR UPDATES
 	# Get the creation timestamp of the local image (if it exists)
-	IMAGE_TIME=$(docker image inspect -f '{{.Created}}' "$IMAGE_NAME" 2>/dev/null)
+	BUILD_CONTEXT_VARS="BASE_IMAGE=$BASE_IMAGE;USER_ID=$USER_ID;GROUP_ID=$GROUP_ID"
 
-	if [ -n "$IMAGE_TIME" ]; then
-		# Check for md5 (macOS) or md5sum (Linux)
-		if command -v md5 >/dev/null 2>&1; then
-			FILES_HASH=$(find "$CLIDE_DIR/Dockerfile" "$CLIDE_DIR/configs" -type f -exec md5 -q {} + | md5 -q)
-		else
-			FILES_HASH=$(find "$CLIDE_DIR/Dockerfile" "$CLIDE_DIR/configs" -type f -exec md5sum {} + | md5sum | cut -d' ' -f1)
-		fi
-
-		OLD_HASH=$(cat "$CLIDE_DIR/.build_hash" 2>/dev/null)
-
-		if [ "$FILES_HASH" != "$OLD_HASH" ]; then
-			echo "--- Changes detected. Rebuilding PDE image... ---"
-			docker compose -f "$CLIDE_DIR/docker-compose.yml" build && echo "$FILES_HASH" > "$CLIDE_DIR/.build_hash"
-		fi
-
+	# Check for md5 (macOS) or md5sum (Linux)
+	if command -v md5 >/dev/null 2>&1; then
+		BUILD_HASH=$(find "$CLIDE_DIR/Dockerfile" "$CLIDE_DIR/configs" -type f -exec md5 -q {} +; echo "$BUILD_CONTEXT_VARS" | md5 -q)
 	else
-		echo "--- Image not found. Initial build... ---"
-		docker compose -f "$CLIDE_DIR/docker-compose.yml" build
+		BUILD_HASH=$(find "$CLIDE_DIR/Dockerfile" "$CLIDE_DIR/configs" -type f -exec md5sum {} +; echo "$BUILD_CONTEXT_VARS" | md5sum | cut -d' ' -f1)
 	fi
+
+	OLD_HASH=$(cat "$LOCAL_HASH_FILE" 2>/dev/null)
+
+	if [ -z "$OLD_HASH" ]; then
+		echo "--- Image not found. Initial build... ---"
+		docker compose -f "$CLIDE_DIR/docker-compose.yml" build && echo "$BUILD_HASH" > "$LOCAL_HASH_FILE"
+	elif [ "$BUILD_HASH" != "$OLD_HASH" ]; then
+		echo "--- Changes detected. Rebuilding PDE image... ---"
+		docker compose -f "$CLIDE_DIR/docker-compose.yml" build && echo "$BUILD_HASH" > "$LOCAL_HASH_FILE"
+	fi
+
 
 	# 2. Ensure the container is running in the background
 	if [ ! "$(docker ps -q -f name="$CONTAINER_NAME")" ]; then
 		echo "--- Launching PDE for $PROJ_NAME ---"
 		# -d runs it in the background
 		COMPOSE_PROJECT_NAME="$CONTAINER_NAME" \
-			docker compose -f "$CLIDE_DIR/docker-compose.yml" up -d --remove-orphans
+			docker compose -f "$CLIDE_DIR/docker-compose.yml" -p "$CONTAINER_NAME" up -d --remove-orphans
 	fi
 
 	# 3. Always use 'exec' to enter the environment
@@ -262,12 +312,40 @@ clide_check() {
 	echo ""
 	echo "--- Project Context ---"
 	echo "Current Project: $PROJECT_ROOT"
-	if [ -f "$PROJECT_ROOT/.base-image" ]; then
-		echo ".base-image: $(cat "$PROJECT_ROOT/.base-image")"
+	if [ -f "$BASE_IMAGE_FILE" ]; then
+		echo "base_image: $(cat "$BASE_IMAGE_FILE")"
 	else
-		echo ".base-image: NOT FOUND"
+		echo "base_image: NOT FOUND"
 	fi
 }
+
+clide_doctor() {
+	if [ ! -d "$STATE_DIR" ]; then
+		echo "❌ Nothing to doctor. Not a CLIDE project."
+		echo "If you want to start a new project, run 'clide init'."
+		exit 1
+	fi
+
+	echo "🩺 CLIDE Doctor: Repairing broken state in $PROJECT_ROOT..."
+
+	# Repair base_image if missing
+	if [ ! -f "$BASE_IMAGE_FILE" ]; then
+		local detected
+		detected=$(detect_base_image "$PROJECT_ROOT")
+		# ... auto-detection logic ...
+		echo "$detected" > "$BASE_IMAGE_FILE"
+		echo "🔨 Repaired missing image: $detected."
+	fi
+
+	# Repair build_hash if missing (forces a rebuild on next start)
+	if [ ! -f "$LOCAL_HASH_FILE" ]; then
+		echo "0" > "$LOCAL_HASH_FILE"
+		echo "🔨 Reset build_hash to force a fresh build."
+	fi
+
+	echo "✨ Repair complete."
+}
+
 
 clide_help() {
 	echo "CLIDE---HELP"
@@ -276,17 +354,19 @@ clide_help() {
 	echo "Usage: clide <command> [options]"
 	echo ""
 	echo "Commands:"
-	echo "  init        Initialise a project (creates .base-image)"
+	echo "  init        Initialise a project"
 	echo "  start       Launch or re-attach to the IDE for this project"
 	echo "  stop        Stop the container for the current directory"
 	echo "  stop -a     Stop ALL active CLIDE containers"
 	echo "  stop [name] Stop a specific container by name"
 	echo "  list        List all currently running CLIDE environments"
 	echo "  check       Run system diagnostics and check project context"
+	echo "  doctor      Repair a broken clide config inside a project"
 	echo "  update      Pull the latest CLIDE code and rebuild images"
 	echo "  clean       Prune orphaned Docker networks and volumes"
-	echo "  completions  Initialise shell autocompletion with auto-detected shell"
+	echo "  completions Initialise shell autocompletion with auto-detected shell"
 	echo "  completions [shell]  Initialise shell autocompletion with supplied shell (zsh, bash, or fish)"
+	echo "	uninstall   Remove clide from your system (doesn't touch any project folders)"
 	echo "  version     Show the current CLIDE version"
 	echo ""
 	echo "Example:"
@@ -457,6 +537,9 @@ case "$1" in
 		;;
 	debug)
 		clide_debug
+		;;
+	doctor)
+		clide_doctor
 		;;
 	uninstall)
 		clide_uninstall
